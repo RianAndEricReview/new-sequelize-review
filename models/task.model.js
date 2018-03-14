@@ -2,7 +2,6 @@
 
 var db = require('./database');
 var Sequelize = require('sequelize');
-var Promise = require('bluebird');
 
 // Make sure you have `postgres` running!
 
@@ -22,110 +21,70 @@ var Task = db.define('Task', {
   },
   due: Sequelize.DATE
 }, {
-//getter methods ~ return info about time remaining on a task instance and overdue status, without adding that info to database
   getterMethods: {
     timeRemaining() {
-      if (!this.due) return Infinity;
-      return this.due - Date.now();
-    },
-
-    overdue() {
-      if (this.due > Date.now() || this.complete) {
-        return false;
+      if (!this.due) {
+        return Infinity
       }
-      return true;
+      return this.due - Date.now()
+    },
+    overdue() {
+      return (Date.now() - this.due > 0 && !this.complete)
+    }
+  },
+  hooks: {
+    beforeDestroy: function(parent) {
+      return Task.destroy({
+        where: {
+          parentId: parent.id
+        }
+      })
     }
   }
 });
 
-//Class Methods
-    //Delete all of the completed tasks
-Task.clearCompleted = () => {
+Task.clearCompleted = function() {
   return Task.destroy({
     where: {
       complete: true
     }
   })
-  .catch((error) => {
-    console.error(error);
-  })
-};
+}
 
-    //Mark all of the not complete task as complete
 Task.completeAll = function() {
-  return Task.findAll({
+  return Task.update({
+    complete: true
+  }, {
     where: {
       complete: false
     }
   })
-  .then((arrayOfIncompleteTasks) => {
-    const incompleteTasks = arrayOfIncompleteTasks.map((task) => {
-      return task.update({complete: true});
-    })
-    return Promise.all(incompleteTasks);
-  })
-  .catch((error) => {
-    console.error(error);
-  })
-};
+}
 
-
-//Instance Methods
-        //Add Child for an instance
-Task.prototype.addChild = function (childTask) {
+Task.prototype.addChild = function(task) {
   return Task.create({
-    name: childTask.name,
+    name: task.name,
+    parentId: this.id
   })
-  .then((createdChild) => {//the child instance that was created
-    return createdChild.setParent(this);
-  })
-  .catch((error) => {
-    console.error(error);
-  })
-};
-    //Get list of an instance's children
+}
+
 Task.prototype.getChildren = function() {
-  const idOfParent = this.id;//id of the parent instance addChild will be called on
   return Task.findAll({
     where: {
-      parentId: idOfParent
+      parentId: this.id
     }
   })
-  .catch((error) => {
-    console.error(error);
-  })
-};
+}
 
-    //List all of a child' siblings
 Task.prototype.getSiblings = function() {
-  const parentIdOfBigSibling = this.parentId;
+  const Op = Sequelize.Op
   return Task.findAll({
     where: {
-      parentId: parentIdOfBigSibling,
-      id: {
-        $ne: this.id
-      }
-
+      parentId: this.parentId,
+      id: {$ne: this.id}
     }
   })
-  .catch((error) => {
-    console.error(error);
-  })
-};
-
-//Hook that will automatically get rid of child instances before a parent is destroyed
-Task.addHook('beforeDestroy', 'removal', function(parentTask){
-  return Task.destroy({
-    where: {
-      parentId: parentTask.id
-    }
-  })
-  .catch((error) => {
-    console.error(error);
-  })
-})
-
-
+}
 
 Task.belongsTo(Task, {as: 'parent'});
 
@@ -133,4 +92,3 @@ Task.belongsTo(Task, {as: 'parent'});
 //---------^^^---------  your code above  ---------^^^----------
 
 module.exports = Task;
-
